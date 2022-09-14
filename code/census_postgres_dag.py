@@ -13,10 +13,12 @@ from sqlalchemy import create_engine
 
 
 def data_clean():
-     # Endereço stage area, dados de entrada(df_census_in), dados de saida(df_census_ou)
+     # stage_area: Airflow variable, contém o path do diretório de armazenamento dos dados
+     # file_in = Adult.data, arquivo csv de entrada
+     # file_out = Adult.data.clean, arquivo csv "limpo"
      stage_area = Variable.get("stage_area")
-     file_in = stage_area+"df_census_in.csv"
-     file_out = stage_area+"df_census_clean.csv"
+     file_in = stage_area+"Adult.data"
+     file_out = stage_area+"Adult.data.clean"
 
      try:
         df = pd.read_csv(file_in,
@@ -32,7 +34,7 @@ def data_clean():
         # verificando dados nulos
         df.isnull().sum()
 
-        # Identificando dados "errado" - dtype
+        # Identificando dados inválidos 
         # coluna 'age'
         age_error = df['age'].loc[~df['age'].str.match(r'[0-9.]+')]
         # coluna fnlwgt
@@ -43,7 +45,7 @@ def data_clean():
         df = df.loc[df["age"].loc[~df['age'].str.contains('[a-zA-Z]+')].index]
         # removendo linha(s) que contém dados inválidos da coluna 'fnlwgt'
         df = df.loc[df["fnlwgt"].loc[~df['fnlwgt'].str.contains('[a-zA-Z]+')].index]
-        # removendo linha(s) que contém dados inválidos da coluna 'fnlwgt'
+        # removendo linha(s) que contém dados inválidos da coluna 'capital-gain'
         df = df.loc[df["capital-gain"].loc[~df['capital-gain'].str.contains('[a-zA-Z]+')].index]
      
         # novas dimensões do dataframa
@@ -63,7 +65,8 @@ def data_clean():
 
  
 def init_db():
-    # conexão ao database, schema: csv_bd 
+    # conexão ao database postgres, schema: csv_bd 
+    # postgres_default: Airflow connection 
     pg_hook = PostgresHook(
               postgres_conn_id='postgres_default',
               schema='csv_bd'
@@ -106,6 +109,7 @@ def init_db():
 
 def load_census_data():
     # carga dos dados:  biblioteca "pandas dataframe to postgres", que utiliza SqlAlchemy (from sqlalchemy import create_engine)
+    # tabela 'us_census' no database postgres armazenar os dados
     conn_string = 'postgresql://postgres:postgres@localhost/csv_bd'
 
     # connection database setup
@@ -115,7 +119,7 @@ def load_census_data():
         conn.autocommit = True
         # arquivo csv_clean da stage area
         stage_area = Variable.get("stage_area")
-        df_clean = stage_area+"df_census_clean.csv"
+        df_clean = stage_area+"Adult.data.clean"
         df = pd.read_csv(df_clean, header=[0])
 
         df_rows = len(df)
@@ -127,7 +131,7 @@ def load_census_data():
         # bloco de 1630 linhas
         data = df.iloc[row_id:row_id+chunk]
     
-        # transferência de dados
+        # transferência de dados - carga na tabela us_census, schema = csv_bd
         print("carga dos dados...")
         try: 
             while (row_id < df_rows):
